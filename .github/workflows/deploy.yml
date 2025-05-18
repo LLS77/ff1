@@ -1,7 +1,12 @@
-name: Deploy
+name: Deploy WireGuard
 
 on:
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Custom app name (optional)'
+        required: false
+        default: ''
 
 jobs:
   deploy:
@@ -12,14 +17,17 @@ jobs:
 
       - name: Set up Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
+        with:
+          version: latest
 
-      - name: Deploy WireGuard
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Generate fly.toml
+        id: config
         run: |
-          # 创建 fly.toml 配置文件
+          APP_NAME=${{ github.event.inputs.app_name }}
+          [[ -z "$APP_NAME" ]] && APP_NAME="wg-${{ github.run_id }}"
+          
           cat > fly.toml <<EOF
-          app = "wg-${{ github.run_id }}"
+          app = "$APP_NAME"
           primary_region = "hkg"
 
           [build]
@@ -30,13 +38,42 @@ jobs:
             WG_PORT = "51820"
           EOF
 
-          # 认证 Flyctl
-          echo "${FLY_API_TOKEN}" | flyctl auth token || { echo "Flyctl authentication failed"; exit 1; }
+          echo "::set-output name=app_name::$APP_NAME"
 
-          # 部署应用
-          flyctl deploy --remote-only || { echo "Deployment failed"; exit 1; }
+      - name: Authenticate Flyctl
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "$FLY_API_TOKEN" | flyctl auth token || {
+            echo "::error::Flyctl authentication failed. Please check your FLY_API_TOKEN secret."
+            exit 1
+          }
 
-          # 获取客户端配置（添加重试逻辑）
-          for i in {1..3}; do
-            flyctl ssh console -C "cat /config/peer_client1.conf" && break || sleep 10
-          done || { echo "Failed to retrieve client config after retries"; exit 1; }
+      - name: Deploy application
+        env:
+          FLY_APP_NAME: ${{ steps.config.outputs.app_name }}
+        run: |
+          flyctl deploy --remote-only || {
+            echo "::error::Deployment failed. Check Flyctl logs for details."
+            flyctl logs --since 5m || echo "No recent logs available"
+            exit 1
+          }
+
+      - name: Get client config
+        env:
+          FLY_APP_NAME: ${{ steps.config.outputs.app_name }}
+        run: |
+          # 等待应用完全启动
+          for attempt in {1..5}; do
+            if flyctl status | grep -q "running"; then
+              break
+            fi
+            sleep 10
+            echo "Attempt $attempt/5: Waiting for app to start..."
+          done
+
+          # 尝试获取配置
+          if ! flyctl ssh console -C "cat /config/peer_client1.conf" 2>/dev/null; then
+            echo "::error::Failed to retrieve client configuration after multiple attempts"
+            exit 1
+          fi
