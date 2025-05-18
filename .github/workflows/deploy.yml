@@ -17,18 +17,47 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
+          # 生成 fly.toml 配置文件
           cat > fly.toml <<EOF
-app = "wg-${{ github.run_id }}"
-primary_region = "hkg"
+          app = "wg-${{ github.run_id }}"
+          primary_region = "hkg"
 
-[build]
-  image = "fscarmen/flyio-wireguard"
+          [build]
+            image = "fscarmen/flyio-wireguard"
 
-[env]
-  PEER_NAME = "client1"
-  WG_PORT = "51820"
-EOF
+          [env]
+            PEER_NAME = "client1"
+            WG_PORT = "51820"
+          EOF
 
-          echo "${{ secrets.FLY_API_TOKEN }}" | flyctl auth token
+          # 认证 Flyctl
+          echo "${FLY_API_TOKEN}" | flyctl auth token
+          if [ $? -ne 0 ]; then
+            echo "::error::Flyctl authentication failed"
+            exit 1
+          fi
+
+          # 部署应用
           flyctl deploy --remote-only
-          flyctl ssh console -C "cat /config/peer_client1.conf"
+          if [ $? -ne 0 ]; then
+            echo "::error::Deployment failed"
+            exit 1
+          fi
+
+          # 获取客户端配置（带重试机制）
+          attempt=1
+          max_attempts=3
+          while [ $attempt -le $max_attempts ]; do
+            flyctl ssh console -C "cat /config/peer_client1.conf"
+            if [ $? -eq 0 ]; then
+              break
+            fi
+            attempt=$((attempt + 1))
+            if [ $attempt -le $max_attempts ]; then
+              sleep 10
+            fi
+          done
+          if [ $attempt -gt $max_attempts ]; then
+            echo "::error::Failed to retrieve client config after $max_attempts attempts"
+            exit 1
+          fi
