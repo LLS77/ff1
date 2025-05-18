@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy WireGuard
 
 on:
   workflow_dispatch:
@@ -12,23 +12,54 @@ jobs:
 
       - name: Set up Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
+        with:
+          version: "latest"
 
-      - name: Deploy WireGuard
+      - name: Generate config
+        run: |
+          echo "创建 fly.toml 配置文件..."
+          cat > fly.toml <<EOF
+          app = "wg-${{ github.run_id }}"
+          primary_region = "hkg"
+
+          [build]
+            image = "fscarmen/flyio-wireguard"
+
+          [env]
+            PEER_NAME = "client1"
+            WG_PORT = "51820"
+          EOF
+
+      - name: Authenticate
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          cat > fly.toml <<EOF
-app = "wg-${{ github.run_id }}"
-primary_region = "hkg"
+          echo "登录 fly.io..."
+          if ! echo "$FLY_API_TOKEN" | flyctl auth token; then
+            echo "::error::认证失败！请检查："
+            echo "1. FLY_API_TOKEN 是否在仓库Settings→Secrets→Actions中正确设置"
+            echo "2. Token是否有效（可在本地运行 'flyctl auth token' 测试）"
+            exit 1
+          fi
 
-[build]
-  image = "fscarmen/flyio-wireguard"
+      - name: Deploy
+        run: |
+          echo "部署到 fly.io..."
+          if ! flyctl deploy --remote-only; then
+            echo "::error::部署失败！尝试获取日志..."
+            flyctl logs --since 5m || true
+            exit 1
+          fi
 
-[env]
-  PEER_NAME = "client1"
-  WG_PORT = "51820"
-EOF
-
-          echo "${{ secrets.FLY_API_TOKEN }}" | flyctl auth token
-          flyctl deploy --remote-only
-          flyctl ssh console -C "cat /config/peer_client1.conf"
+      - name: Get Config
+        run: |
+          echo "获取WireGuard客户端配置..."
+          for i in {1..5}; do
+            if flyctl ssh console -C "cat /config/peer_client1.conf"; then
+              exit 0
+            fi
+            sleep 10
+            echo "::warning::尝试 ${i}/5: 等待服务启动..."
+          done
+          echo "::error::无法获取客户端配置"
+          exit 1
