@@ -5,36 +5,36 @@ on:
 
 jobs:
   deploy:
-运行：ubuntu-最新
+    runs-on: ubuntu-latest
     steps:
--名称：签出代码
-用途：actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
--name：设置Flyctl
-用途：superfly/flyctl-actions/setup-flyctl@master
+      - name: Set up Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
 
--名称：部署有线卫士
+      - name: Deploy WireGuard
         env:
-FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-运行：|
-回声“创建 fly. Tomlyou.”
-cat > fly.toml <<EOF
-平均实物产品（app）="wg-${{ github.run_id }}"
-primary_region ="hkg"
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "创建 fly.toml 配置文件..."
+          cat > fly.toml <<EOF
+app = "wg-${{ github.run_id }}"
+primary_region = "hkg"
 
-          [build]
-image ="fscarmen/flyio-wireguard"
+[build]
+  image = "fscarmen/flyio-wireguard"
 
-          [env]
-PEER_NAME ="client1"
-WG_PORT ="51820"
-埃罗夫
+[env]
+  PEER_NAME = "client1"
+  WG_PORT = "51820"
+EOF
 
-回声“登录 fly. io……”
-回声"${{ secrets.FLY_API_TOKEN }}"|flyctl身份验证令牌
+          echo "登录 fly.io..."
+          echo "${{ secrets.FLY_API_TOKEN }}" | flyctl auth token
 
-回声“部署到 fly. io……”
-flyctl部署-仅远程部署
+          echo "部署到 fly.io..."
+          flyctl deploy --remote-only
 
-回声"部署完成，获取配置..."
-flyctl ssh控制台-C"cat /config/peer_client1.conf"
+          echo "部署完成，获取配置..."
+          flyctl ssh console -C "cat /config/peer_client1.conf"
