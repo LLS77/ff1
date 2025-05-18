@@ -17,7 +17,6 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          echo "创建 fly.toml 配置文件..."
           cat > fly.toml <<EOF
 app = "wg-${{ github.run_id }}"
 primary_region = "hkg"
@@ -30,11 +29,6 @@ primary_region = "hkg"
   WG_PORT = "51820"
 EOF
 
-          echo "登录 fly.io..."
           echo "${{ secrets.FLY_API_TOKEN }}" | flyctl auth token
-
-          echo "部署到 fly.io..."
           flyctl deploy --remote-only
-
-          echo "部署完成，获取配置..."
           flyctl ssh console -C "cat /config/peer_client1.conf"
