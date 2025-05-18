@@ -1,0 +1,40 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+运行：ubuntu-最新
+    steps:
+-名称：签出代码
+用途：actions/checkout@v3
+
+-name：设置Flyctl
+用途：superfly/flyctl-actions/setup-flyctl@master
+
+-名称：部署有线卫士
+        env:
+FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+运行：|
+回声“创建 fly. Tomlyou.”
+cat > fly.toml <<EOF
+平均实物产品（app）="wg-${{ github.run_id }}"
+primary_region ="hkg"
+
+          [build]
+image ="fscarmen/flyio-wireguard"
+
+          [env]
+PEER_NAME ="client1"
+WG_PORT ="51820"
+埃罗夫
+
+回声“登录 fly. io……”
+回声"${{ secrets.FLY_API_TOKEN }}"|flyctl身份验证令牌
+
+回声“部署到 fly. io……”
+flyctl部署-仅远程部署
+
+回声"部署完成，获取配置..."
+flyctl ssh控制台-C"cat /config/peer_client1.conf"
